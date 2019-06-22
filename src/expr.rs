@@ -22,6 +22,8 @@
 use std::collections::HashMap;
 use std::ops::{AddAssign,BitAndAssign,BitOrAssign,BitXorAssign,DivAssign,MulAssign,RemAssign,ShlAssign,ShrAssign,SubAssign};
 use std::num::Wrapping;
+use std::mem::size_of;
+use std::os::raw::*;
 
 use literal::{self,CChar};
 use token::{Token,Kind as TokenKind};
@@ -65,7 +67,7 @@ impl EvalResult {
 	result_opt!(fn as_float: Float -> f64);
 	result_opt!(fn as_char: Char -> CChar);
 	result_opt!(fn as_str: Str -> Vec<u8>);
-	
+
 	fn as_numeric(self) -> Option<EvalResult> {
 		match self {
 			EvalResult::Int(_) | EvalResult::Float(_) => Some(self),
@@ -128,6 +130,10 @@ macro_rules! any_token (
 
 macro_rules! p (
 	($i:expr, $c:expr) => (exact_token!($i,Punctuation,$c.as_bytes()))
+);
+
+macro_rules! k (
+       ($i:expr, $c:expr) => (exact_token!($i,Keyword,$c.as_bytes()))
 );
 
 macro_rules! one_of_punctuation (
@@ -298,9 +304,51 @@ macro_rules! numeric (
 	($i:expr, $f:expr ) => (map_opt!($i,call!($f),EvalResult::as_numeric));
 );
 
+enum TypeCast {
+    SignedInt(usize),
+	UnsignedInt(usize),
+    Float(usize)
+}
+
+impl EvalResult {
+	fn cast(self, ctype: TypeCast) -> Self {
+		use self::TypeCast::*;
+		let mask = |b| 2i64.pow((b*8) as u32);
+		let signed_mask = |i, b| if b>=8 {i} else {i % mask(b)};
+		let unsigned_mask = |i, b| if b>=8 {i} else {(i+mask(b)) % mask(b)};
+		match self {
+			EvalResult::Float(f) => match ctype {
+				// handle type cast here
+				SignedInt(b) => EvalResult::Int(Wrapping(f as i64)),
+				UnsignedInt(b) => EvalResult::Int(Wrapping(f as i64)),
+				_ => self
+			},
+			EvalResult::Int(Wrapping(i)) => match ctype {
+				SignedInt(b) => EvalResult::Int(Wrapping(signed_mask(i, b))),
+				UnsignedInt(b) => EvalResult::Int(Wrapping(unsigned_mask(i, b))),
+				_ => self
+			}
+			_ => self
+		}
+	}
+}
+
+
 impl<'a> PRef<'a> {
+    method!(cast<PRef<'a>,&[Token],TypeCast,::Error>, mut self,
+		delimited!(p!("("), alt!(
+			do_parse!(k!("unsigned") >> k!("int") >> (TypeCast::UnsignedInt(size_of::<c_uint>()))) |
+			do_parse!(k!("unsigned") >> k!("char") >> (TypeCast::UnsignedInt(size_of::<c_uchar>()))) |
+			do_parse!(k!("unsigned") >> k!("long") >> (TypeCast::UnsignedInt(size_of::<c_ulong>()))) |
+			do_parse!(opt!(k!("signed")) >> k!("int") >> (TypeCast::SignedInt(size_of::<c_int>()))) |
+			do_parse!(opt!(k!("signed")) >> k!("char") >> (TypeCast::SignedInt(size_of::<c_char>()))) |
+			do_parse!(opt!(k!("signed")) >> k!("long") >> (TypeCast::SignedInt(size_of::<c_long>())))
+		) ,p!(")"))
+	);
+
 	method!(unary<PRef<'a>,&[Token],EvalResult,::Error>, mut self,
 		alt!(
+			map!(pair!(call_m!(self.cast), call_m!(self.unary)), |(c, r)| r.cast(c) ) |
 			delimited!(p!("("),call_m!(self.numeric_expr),p!(")")) |
 			numeric!(call_m!(self.literal)) |
 			numeric!(call_m!(self.identifier)) |
@@ -489,7 +537,7 @@ impl<'ident> IdentifierParser<'ident> {
 	fn as_ref(&self) -> PRef {
 		PRef(self)
 	}
-	
+
 	/// Create a new `IdentifierParser` with a set of known identifiers. When
 	/// a known identifier is encountered during parsing, it is substituted
 	/// for the value specified.
