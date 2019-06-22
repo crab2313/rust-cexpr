@@ -30,5 +30,6 @@
 #define Int_n3 (signed long)-3
 
 #define Float_236p3 (int)233.3 + 3.3
+#define Int_255 (uint8_t)-1
 
 #define Fn_Int_9(_3) _3*3

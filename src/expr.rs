@@ -133,7 +133,11 @@ macro_rules! p (
 );
 
 macro_rules! k (
-       ($i:expr, $c:expr) => (exact_token!($i,Keyword,$c.as_bytes()))
+    ($i:expr, $c:expr) => (exact_token!($i,Keyword,$c.as_bytes()))
+);
+
+macro_rules! i (
+    ($i:expr, $c:expr) => (exact_token!($i,Identifier,$c.as_bytes()))
 );
 
 macro_rules! one_of_punctuation (
@@ -342,7 +346,15 @@ impl<'a> PRef<'a> {
 			do_parse!(k!("unsigned") >> k!("long") >> (TypeCast::UnsignedInt(size_of::<c_ulong>()))) |
 			do_parse!(opt!(k!("signed")) >> k!("int") >> (TypeCast::SignedInt(size_of::<c_int>()))) |
 			do_parse!(opt!(k!("signed")) >> k!("char") >> (TypeCast::SignedInt(size_of::<c_char>()))) |
-			do_parse!(opt!(k!("signed")) >> k!("long") >> (TypeCast::SignedInt(size_of::<c_long>())))
+			do_parse!(opt!(k!("signed")) >> k!("long") >> (TypeCast::SignedInt(size_of::<c_long>()))) |
+			do_parse!(i!("uint8_t") >> (TypeCast::UnsignedInt(1))) |
+			do_parse!(i!("uint16_t") >> (TypeCast::UnsignedInt(2))) |
+			do_parse!(i!("uint32_t") >> (TypeCast::UnsignedInt(4))) |
+			do_parse!(i!("uint64_t") >> (TypeCast::UnsignedInt(8))) |
+			do_parse!(i!("int8_t") >> (TypeCast::SignedInt(1))) |
+			do_parse!(i!("int16_t") >> (TypeCast::SignedInt(2))) |
+			do_parse!(i!("int32_t") >> (TypeCast::SignedInt(4))) |
+			do_parse!(i!("int64_t") >> (TypeCast::SignedInt(8)))
 		) ,p!(")"))
 	);
 
